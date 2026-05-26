@@ -665,6 +665,60 @@ class SupervisordTests(unittest.TestCase):
         supervisord.runforever()
         self.assertEqual(len(supervisord.ticks), 3)
 
+    def test_runforever_skips_reap_without_child_pids(self):
+        options = DummyOptions()
+        options.test = True
+        supervisord = self._makeOne(options)
+        supervisord.runforever()
+        self.assertEqual(options.waitpid_calls, 0)
+
+    def test_runforever_reads_signal_once_without_child_pids(self):
+        import signal
+        options = DummyOptions()
+        options.test = True
+        signals = [None, signal.SIGCHLD]
+
+        def get_signal():
+            return signals.pop(0)
+
+        options.get_signal = get_signal
+        supervisord = self._makeOne(options)
+        supervisord.runforever()
+        self.assertEqual(signals, [signal.SIGCHLD])
+
+    def test_runforever_skips_reap_for_sigchld_without_child_pids(self):
+        import signal
+        options = DummyOptions()
+        options.test = True
+        options._signal = signal.SIGCHLD
+        supervisord = self._makeOne(options)
+        supervisord.runforever()
+        self.assertEqual(options.waitpid_calls, 0)
+        msgs = ('received SIGCHLD indicating a child quit',
+                'received SIGCLD indicating a child quit')
+        self.assertTrue(options.logger.data[0] in msgs)
+
+    def test_runforever_reaps_with_child_pids(self):
+        options = DummyOptions()
+        options.test = True
+        pconfig = DummyPConfig(options, 'process', '/bin/foo', '/tmp')
+        process = DummyProcess(pconfig)
+        process.drained = False
+        process.killing = True
+        process.laststop = None
+        process.waitstatus = None, None
+        options.pidhistory[123] = process
+        waitpid_results = [(123, 0), (None, None)]
+
+        def waitpid():
+            options.waitpid_calls += 1
+            return waitpid_results.pop(0)
+
+        options.waitpid = waitpid
+        supervisord = self._makeOne(options)
+        supervisord.runforever()
+        self.assertEqual(options.waitpid_calls, 2)
+
     def test_runforever_poll_dispatchers(self):
         options = DummyOptions()
         options.poller.result = [6], [7, 8]

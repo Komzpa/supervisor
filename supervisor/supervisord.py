@@ -45,6 +45,8 @@ from supervisor import events
 from supervisor.states import SupervisorStates
 from supervisor.states import getProcessStateDescription
 
+_NO_SIGNAL = object()
+
 class Supervisor:
     stopping = False # set after we detect that we are handling a stop request
     lastshutdownreport = 0 # throttle for delayed process error reports at stop
@@ -261,8 +263,10 @@ class Supervisor:
             for group in pgroups:
                 group.transition()
 
-            self.reap()
-            self.handle_signal()
+            sig = self.options.get_signal()
+            if self.options.pidhistory:
+                self.reap()
+            self.handle_signal(sig)
             self.tick()
 
             if self.options.mood < SupervisorStates.RUNNING:
@@ -305,8 +309,9 @@ class Supervisor:
                 # infinitely
                 self.reap(once=False, recursionguard=recursionguard+1)
 
-    def handle_signal(self):
-        sig = self.options.get_signal()
+    def handle_signal(self, sig=_NO_SIGNAL):
+        if sig is _NO_SIGNAL:
+            sig = self.options.get_signal()
         if sig:
             if sig in (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT):
                 self.options.logger.warn(
